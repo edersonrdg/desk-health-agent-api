@@ -86,7 +86,7 @@ Every technical choice in this spec comes from this table. All decisions were ma
 | D25 | Service identity fields | **name + active**. **name only**. **Exactly the list**. | `name text NOT NULL`, `UNIQUE (tenant_id, name)`, `active boolean NOT NULL DEFAULT true` | Decided |
 | D26 | Patient before consent | **`consent_at` nullable**: row at first contact. **NOT NULL**: pre-consent state elsewhere. | `consent_at` nullable. The "no health data before consent" rule is enforced by services later | Decided |
 | D27 | Timezone/locale validation | **CHECKs in DB** (locale only; timezone in Zod). **App-only**. | `locale` CHECK IN (`pt-BR`, `en`, `es`) default `pt-BR`. `timezone` is validated as an IANA name by Zod on write | Decided |
-| D28 | FK delete behavior | **RESTRICT everywhere**. **CASCADE from tenant and patient, RESTRICT from service**. **CASCADE everywhere**. | `ON DELETE CASCADE` for every `tenant_id` FK and `appointment.patient_id`. `ON DELETE RESTRICT` for `appointment.service_id` | Decided |
+| D28 | FK delete behavior | **RESTRICT everywhere**. **CASCADE from tenant and patient, RESTRICT from service**. **CASCADE everywhere**. | `ON DELETE CASCADE` for every `tenant_id` FK and `appointment.patient_id`. `ON DELETE RESTRICT` for `appointment.service_id`. **Amended by spec 004 D35:** `audit_event.tenant_id` is RESTRICT | Decided |
 | D29 | Patient nullability | **Only whatsapp_id required**. **whatsapp_id + name required**. | `whatsapp_id` and `name` NOT NULL. `dob`, `national_id`, `national_id_hash`, `insurance` and `consent_at` nullable | Decided |
 
 ### Product questions

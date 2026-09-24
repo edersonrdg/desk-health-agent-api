@@ -1,5 +1,6 @@
 import { DataSourceOptions } from 'typeorm';
 import { Env } from '../../config/env.schema';
+import { AuditEventEntity } from '../../modules/audit/audit-event.entity';
 import { AppointmentEntity } from '../../modules/appointment/appointment.entity';
 import { PatientEntity } from '../../modules/patient/patient.entity';
 import { ServiceEntity } from '../../modules/service/service.entity';
@@ -14,6 +15,7 @@ export const ENTITIES = [
   AppointmentEntity,
   InboxMessageEntity,
   OutboxMessageEntity,
+  AuditEventEntity,
 ];
 
 /** Bounds each connect attempt so a black-holed host can't stall the retry loop. */

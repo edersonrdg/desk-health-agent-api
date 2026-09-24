@@ -4,6 +4,7 @@ import {
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import type { TenantLocale, TenantPolicies } from './tenant-policies.schema';
@@ -11,6 +12,7 @@ import type { TenantLocale, TenantPolicies } from './tenant-policies.schema';
 /** A hospital, a clinic or one practitioner. Root of tenant isolation. */
 @Entity({ name: 'tenant' })
 @Check('chk_tenant_locale', `"locale" IN ('pt-BR', 'en', 'es')`)
+@Unique('uq_tenant_evolution_instance', ['evolutionInstance'])
 export class TenantEntity {
   @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'pk_tenant' })
   id!: string;
@@ -28,6 +30,10 @@ export class TenantEntity {
   /** Validated by `tenantPoliciesSchema` on write. */
   @Column({ name: 'policies', type: 'jsonb', default: () => "'{}'" })
   policies!: TenantPolicies;
+
+  /** Evolution API instance name that delivers this tenant's webhooks (spec 004 D3). */
+  @Column({ name: 'evolution_instance', type: 'text', nullable: true })
+  evolutionInstance!: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

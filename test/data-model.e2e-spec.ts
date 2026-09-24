@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { DataSource, Repository } from 'typeorm';
 import { validateEnv } from '../src/config/env.schema';
 import { AppointmentEntity } from '../src/modules/appointment/appointment.entity';
+import { AuditEventEntity } from '../src/modules/audit/audit-event.entity';
 import { PatientEntity } from '../src/modules/patient/patient.entity';
 import { ServiceEntity } from '../src/modules/service/service.entity';
 import { TenantEntity } from '../src/modules/tenant/tenant.entity';
@@ -13,6 +15,7 @@ import {
 } from '../src/shared/crypto/field-encryption';
 import { buildDataSourceOptions } from '../src/shared/database/database.options';
 import { InitialDataModel1790274278271 } from '../src/shared/database/migrations/1790274278271-InitialDataModel';
+import { InboundWebhookAndAudit1790282957865 } from '../src/shared/database/migrations/1790282957865-InboundWebhookAndAudit';
 import { InboxMessageEntity } from '../src/shared/messaging/inbox-message.entity';
 import { OutboxMessageEntity } from '../src/shared/messaging/outbox-message.entity';
 
@@ -53,6 +56,7 @@ describe('Data model (e2e)', () => {
   let patients: Repository<PatientEntity>;
   let services: Repository<ServiceEntity>;
   let appointments: Repository<AppointmentEntity>;
+  let audits: Repository<AuditEventEntity>;
 
   const start = new Date('2026-10-01T12:00:00.000Z');
   const end = new Date('2026-10-01T12:30:00.000Z');
@@ -82,7 +86,10 @@ describe('Data model (e2e)', () => {
 
     ds = new DataSource({
       ...buildDataSourceOptions({ ...env, POSTGRES_DB: TEST_DB }),
-      migrations: [InitialDataModel1790274278271],
+      migrations: [
+        InitialDataModel1790274278271,
+        InboundWebhookAndAudit1790282957865,
+      ],
     });
     await ds.initialize();
     await ds.runMigrations();
@@ -91,6 +98,7 @@ describe('Data model (e2e)', () => {
     patients = ds.getRepository(PatientEntity);
     services = ds.getRepository(ServiceEntity);
     appointments = ds.getRepository(AppointmentEntity);
+    audits = ds.getRepository(AuditEventEntity);
   });
 
   afterAll(async () => {
@@ -236,6 +244,7 @@ describe('Data model (e2e)', () => {
           externalId: 'wamid.ABC',
           eventType: 'whatsapp.message.received',
           payload,
+          ...(entity === InboxMessageEntity && { traceId: randomUUID() }),
         }),
       );
 
@@ -308,10 +317,12 @@ describe('Data model (e2e)', () => {
       ['outbox_message', 'uq_outbox_message_tenant_external_id'],
     ])('%s external_id is unique per tenant', async (table, constraint) => {
       const tenant = await newTenant();
+      const traceColumn = table === 'inbox_message' ? ', "trace_id"' : '';
+      const traceValue = table === 'inbox_message' ? ', gen_random_uuid()' : '';
       const insert = () =>
         ds.query(
-          `INSERT INTO "${table}" ("tenant_id", "external_id", "event_type", "payload")
-           VALUES ($1, 'wamid.DUP', 'e', '\\x01')`,
+          `INSERT INTO "${table}" ("tenant_id", "external_id", "event_type", "payload"${traceColumn})
+           VALUES ($1, 'wamid.DUP', 'e', '\\x01'${traceValue})`,
           [tenant.id],
         );
       await insert();
@@ -419,6 +430,7 @@ describe('Data model (e2e)', () => {
       const { tenant } = await bookedContext();
       await ds.getRepository(InboxMessageEntity).save({
         tenantId: tenant.id,
+        traceId: randomUUID(),
         externalId: 'in',
         eventType: 'e',
         payload: {},
@@ -446,8 +458,90 @@ describe('Data model (e2e)', () => {
     });
   });
 
+  describe('audit_event (spec 004)', () => {
+    const newAudit = (tenantId: string) =>
+      audits.save(
+        audits.create({
+          tenantId,
+          actorType: 'system',
+          action: 'inbox_message.received',
+          entityType: 'inbox_message',
+          entityId: randomUUID(),
+          before: null,
+          after: { note: 'dor no peito' },
+          traceId: randomUUID(),
+        }),
+      );
+
+    it('round-trips with before/after encrypted', async () => {
+      const tenant = await newTenant();
+      const saved = await newAudit(tenant.id);
+
+      expect(await audits.findOneByOrFail({ id: saved.id })).toMatchObject({
+        actorType: 'system',
+        actorId: null,
+        before: null,
+        after: { note: 'dor no peito' },
+        modelVersion: null,
+        promptVersion: null,
+      });
+      const [raw] = await ds.query<{ after: Buffer }[]>(
+        `SELECT "after" FROM "audit_event" WHERE "id" = $1`,
+        [saved.id],
+      );
+      expect(raw.after[0]).toBe(CIPHERTEXT_VERSION);
+      expect(raw.after.includes('dor no peito')).toBe(false);
+    });
+
+    it('is append-only: UPDATE and DELETE raise', async () => {
+      const tenant = await newTenant();
+      const saved = await newAudit(tenant.id);
+
+      await expect(
+        ds.query(`UPDATE "audit_event" SET "action" = 'x' WHERE "id" = $1`, [
+          saved.id,
+        ]),
+      ).rejects.toThrow('audit_event is append-only');
+      await expect(
+        ds.query(`DELETE FROM "audit_event" WHERE "id" = $1`, [saved.id]),
+      ).rejects.toThrow('audit_event is append-only');
+    });
+
+    it('a tenant with audit history cannot be deleted', async () => {
+      const tenant = await newTenant();
+      await newAudit(tenant.id);
+
+      await expectConstraint(
+        tenants.delete({ id: tenant.id }),
+        'fk_audit_event_tenant',
+      );
+    });
+
+    it('evolution_instance is unique across tenants', async () => {
+      await tenants.save(
+        tenants.create({
+          name: 'A',
+          timezone: 'UTC',
+          evolutionInstance: 'clinic-a',
+        }),
+      );
+
+      await expectConstraint(
+        tenants.save(
+          tenants.create({
+            name: 'B',
+            timezone: 'UTC',
+            evolutionInstance: 'clinic-a',
+          }),
+        ),
+        'uq_tenant_evolution_instance',
+      );
+    });
+  });
+
   // Last: reverting drops the schema the other tests use.
-  it('reverting the migration leaves no tables or enum types', async () => {
+  it('reverting the migrations leaves no tables, enum types or functions', async () => {
+    await ds.undoLastMigration();
     await ds.undoLastMigration();
 
     const tables = await ds.query<{ table_name: string }[]>(
@@ -459,7 +553,13 @@ describe('Data model (e2e)', () => {
        JOIN pg_namespace n ON n."oid" = t."typnamespace"
        WHERE n."nspname" = 'public' AND t."typtype" = 'e'`,
     );
+    const functions = await ds.query<{ proname: string }[]>(
+      `SELECT p."proname" FROM pg_proc p
+       JOIN pg_namespace n ON n."oid" = p."pronamespace"
+       WHERE n."nspname" = 'public'`,
+    );
     expect(tables).toEqual([]);
     expect(types).toEqual([]);
+    expect(functions).toEqual([]);
   });
 });

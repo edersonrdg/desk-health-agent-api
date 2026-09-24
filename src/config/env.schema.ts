@@ -20,6 +20,8 @@ export const envSchema = z.object({
   REDIS_PORT: port.default(6379),
   ENCRYPTION_KEY: base64Key,
   NATIONAL_ID_HMAC_KEY: base64Key,
+  /** Shared secret for the Evolution API webhook. Unset: the webhook answers 503. */
+  EVOLUTION_WEBHOOK_SECRET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

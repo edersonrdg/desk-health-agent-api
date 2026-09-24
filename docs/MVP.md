@@ -170,7 +170,7 @@ Format: each story has the actor and goal, the PRD references, its dependencies,
   3. Until consent exists, no health information (symptoms, national ID, date of birth) is stored or sent to the LLM, and every other flow is blocked.
   4. Declining or ignoring the notice keeps the patient blocked and the reply explains how to accept later.
   5. The consent change emits an audit event (actor patient, before/after `consent_at`).
-- **Decisions for the spec:** `patient.name` is NOT NULL (source before the patient types it: WhatsApp profile name or a placeholder); consent revocation in the MVP or not; `audit_event` table design (see G3).
+- **Decisions for the spec:** `patient.name` is NOT NULL (source before the patient types it: WhatsApp profile name or a placeholder); consent revocation in the MVP or not; `audit_event` exists since spec 004 (see G3).
 
 #### US-11 · Availability search
 
@@ -284,7 +284,7 @@ The requested MVP differs from the PRD and root CLAUDE.md in the points below. T
 | D2 | WhatsApp provider | WhatsApp Cloud API: `X-Hub-Signature-256`, `wamid`, Meta templates, 24-hour window (FR-33). | Evolution API. | Webhook auth and message ids follow Evolution. Meta template rules only apply if the instance uses the Cloud API integration. No proactive messages are in the MVP. |
 | G1 | Scheduling resource and rule 6 | Exclusion constraint on `(professional_id, tstzrange)` for bookings and holds. `appointment` has no `professional_id` (spec 003 D1). | Minimal entity list has no `professional` or schedule. | Booking (US-12) is blocked until a spec adds the resource (professional or other), its working hours and the exclusion constraint. Rule 6 can't be weakened. |
 | G2 | Holds | FR-21 requires a hold with TTL (`slot_hold`). | Not listed. | Needed by US-11 and US-12, and must take part in the exclusion constraint. |
-| G3 | Audit | Rule 9: every state change emits an `audit_event`. Deferred by spec 003 D2. | Not listed. | Needed from the first state-changing story (US-10). |
+| G3 | Audit | Rule 9: every state change emits an `audit_event`. Deferred by spec 003 D2. | Not listed. | **Addressed by spec 004** (D30–D36): `audit_event` exists (append-only, encrypted before/after, tenant FK RESTRICT). US-10 emits its consent events there. |
 | G4 | Catalog content and embeddings | `kb_document` / `kb_chunk` with pgvector. `service` has name, type, duration, price only. | RAG on the service catalog, minimal entities only. | US-07 needs text to embed and a place to store vectors. The compose image `postgres:latest` has no pgvector. |
 | G5 | Intents | FR-03: 9 intents, including emergency, diagnosis request, human request. Rule 2: L1 and L4 always run. | Router with 3 classes. No L1 or L4 listed. | US-05 and US-09 were added. The router spec must decide how cancel, diagnosis requests and "other" are handled. |
 | G6 | Symptom routing | Rule 3 and FR-12: routing only from `symptom_routing_rule`. | Not listed. | Without the table, any symptom description may only get a general practitioner / occupational physician offer (rule 3 fallback) and never an LLM-invented route. |
