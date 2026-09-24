@@ -4,8 +4,8 @@ import {
   HealthIndicatorService,
 } from '@nestjs/terminus';
 import Redis from 'ioredis';
-import { errorMessage } from '../common/error-message';
-import { REDIS_CLIENT } from '../redis/redis.constants';
+import { errorMessage } from '../../shared/utils/error-message';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 
 export interface RedisPingCheckOptions {
   /** Maximum time for the PING in ms. Defaults to 1000. */

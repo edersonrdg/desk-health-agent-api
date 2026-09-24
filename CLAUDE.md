@@ -37,23 +37,25 @@ desk-health-agent-api/
 │   ├── 001-initial-project-structure/
 │   └── 002-readiness-health-check/
 ├── src/
-│   ├── common/
 │   ├── config/
-│   ├── database/
-│   ├── health/
-│   └── redis/
+│   ├── modules/
+│   │   └── health/
+│   └── shared/
+│       ├── database/
+│       ├── redis/
+│       └── utils/
 └── test/
 ```
 
 - `docs/`: one folder per feature, numbered `NNN-<slug>/`. Each holds a `spec.md` written with the `create-spec` skill, which records the user's decisions and the execution steps for that feature.
 - `docs/001-initial-project-structure/`: `spec.md` for the initial NestJS structure, `GET /health` liveness and the docker-compose Postgres and Redis.
 - `docs/002-readiness-health-check/`: `spec.md` for validated config, the Postgres and Redis connections and `GET /health/ready`.
-- `src/`: application source code (Nest `sourceRoot`, compiled to `dist/`). `main.ts` bootstraps the app, enables shutdown hooks and listens on `PORT`. `app.module.ts` is the root module: it loads the global `ConfigModule` (validated by `validateEnv`) and imports `DatabaseModule`, `RedisModule` and `HealthModule`. Each feature module lives in its own subfolder.
-- `src/common/`: small shared helpers. `error-message.ts` turns an unknown error into a loggable message (falls back to the error code for Node's empty-message `AggregateError`).
+- `src/`: application source code (Nest `sourceRoot`, compiled to `dist/`). `main.ts` bootstraps the app, enables shutdown hooks and listens on `PORT`. `app.module.ts` is the root module: it loads the global `ConfigModule` (validated by `validateEnv`) and imports `DatabaseModule`, `RedisModule` and `HealthModule`. Code is split into `config/`, `modules/` (one folder per feature module) and `shared/` (infrastructure modules and helpers reused across features).
 - `src/config/`: `env.schema.ts` holds the Zod env schema, its inferred `Env` type (use with `ConfigService<Env, true>` and `{ infer: true }`) and `validateEnv`, which fails boot with a readable error that never echoes values. `env.schema.spec.ts` tests defaults, required variables and port coercion.
-- `src/database/`: `DatabaseModule` registers the TypeORM Postgres DataSource with `manualInitialization: true`. `DatabaseConnector` (`database-connector.service.ts`) initializes it in the background after boot and retries every 5 s forever, so the api starts even when Postgres is down.
-- `src/health/`: `HealthModule` (imports `TerminusModule` with its logger off). `health.controller.ts` serves `GET /health` (liveness: 200, empty body, no checks) and `GET /health/ready` (readiness: Postgres `SELECT 1` and Redis `PING`, 1 s timeout each; 200 or 503 with `{ status, details: { postgres, redis } }` as up/down only, failures logged instead of returned). `redis.health.ts` is the custom Redis indicator. Specs sit next to both.
-- `src/redis/`: global `RedisModule` exporting one ioredis client under the `REDIS_CLIENT` token (`redis.constants.ts`). `redis.client.ts` builds the client and logs connection state only on up/down transitions. The module quits (or disconnects) the client on shutdown.
+- `src/shared/database/`: `DatabaseModule` registers the TypeORM Postgres DataSource with `manualInitialization: true`. `DatabaseConnector` (`database-connector.service.ts`) initializes it in the background after boot and retries every 5 s forever, so the api starts even when Postgres is down.
+- `src/modules/health/`: `HealthModule` (imports `TerminusModule` with its logger off). `health.controller.ts` serves `GET /health` (liveness: 200, empty body, no checks) and `GET /health/ready` (readiness: Postgres `SELECT 1` and Redis `PING`, 1 s timeout each; 200 or 503 with `{ status, details: { postgres, redis } }` as up/down only, failures logged instead of returned). `redis.health.ts` is the custom Redis indicator. Specs sit next to both.
+- `src/shared/redis/`: global `RedisModule` exporting one ioredis client under the `REDIS_CLIENT` token (`redis.constants.ts`). `redis.client.ts` builds the client and logs connection state only on up/down transitions. The module quits (or disconnects) the client on shutdown.
+- `src/shared/utils/`: small shared helpers. `error-message.ts` turns an unknown error into a loggable message (falls back to the error code for Node's empty-message `AggregateError`).
 - `test/`: end-to-end tests. `app.e2e-spec.ts` boots the full `AppModule` and checks `GET /health` and `GET /health/ready` over HTTP with Supertest, **against the docker-compose Postgres and Redis** (needs `docker compose up -d` and `.env`). `jest-e2e.json` is the Jest config used by `npm run test:e2e` (matches `*.e2e-spec.ts`).
 <!-- auto:structure:end -->
 
@@ -108,7 +110,7 @@ Copy `.env.example` (committed, dev-only placeholders) to `.env` (git-ignored). 
 ## Conventions
 
 - **Style:** Prettier with single quotes and trailing commas. TypeScript runs in `strict` mode. ESLint's type-checked rules are on; `no-explicit-any` is an error, while `no-floating-promises` and `no-unsafe-argument` are warnings. Run `npm run lint` and `npm run test` before committing.
-- **Modules:** one Nest feature module per concern, in its own folder under `src/`. Generate with the Nest CLI so structure and specs stay consistent.
+- **Modules:** one Nest feature module per concern, in its own folder under `src/modules/`. Code reused across features (infrastructure modules, helpers) goes in `src/shared/`. Generate with the Nest CLI so structure and specs stay consistent.
 - **Tests:** unit specs sit next to the code as `*.spec.ts`; e2e tests go in `test/` as `*.e2e-spec.ts`. Holds, bookings, swaps and offer acceptance also need concurrency tests against a real Postgres (see the root CLAUDE.md "Testing expectations").
 - **Contracts:** queue messages and tool endpoints are shared with `desk-health-agent-core`. Carry `tenant_id`, `conversation_id`, a trace id and `schema_version`, and change both repos together.
 - **Language:** code, identifiers, commits and docs in English. Patient-facing text comes from tenant templates or the KB, never hard-coded.

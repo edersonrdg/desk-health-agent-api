@@ -1,6 +1,6 @@
 import { HealthIndicatorService } from '@nestjs/terminus';
 import { Test } from '@nestjs/testing';
-import { REDIS_CLIENT } from '../redis/redis.constants';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 import { RedisHealthIndicator } from './redis.health';
 
 describe('RedisHealthIndicator', () => {

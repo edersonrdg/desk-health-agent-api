@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import Redis from 'ioredis';
-import { errorMessage } from '../common/error-message';
+import { errorMessage } from '../utils/error-message';
 
 export interface RedisClientOptions {
   host: string;

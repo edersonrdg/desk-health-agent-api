@@ -5,7 +5,7 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { errorMessage } from '../common/error-message';
+import { errorMessage } from '../utils/error-message';
 
 export const RETRY_INTERVAL_MS = 5_000;
 

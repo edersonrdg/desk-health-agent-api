@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Env } from '../config/env.schema';
+import { Env } from '../../config/env.schema';
 import { DatabaseConnector } from './database-connector.service';
 
 /** Bounds each connect attempt so a black-holed host can't stall the retry loop. */

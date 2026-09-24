@@ -5,7 +5,7 @@ import { App } from 'supertest/types';
 import Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 import { AppModule } from './../src/app.module';
-import { REDIS_CLIENT } from './../src/redis/redis.constants';
+import { REDIS_CLIENT } from './../src/shared/redis/redis.constants';
 
 /** Postgres and Redis connect in the background after boot (spec 002 D8). */
 async function waitForConnections(moduleRef: TestingModule, timeoutMs = 5_000) {
