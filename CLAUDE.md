@@ -8,6 +8,8 @@ System-wide rules, contracts and the non-negotiable rules: [../CLAUDE.md](../CLA
 
 > Status: spec 003. The api connects to Postgres (TypeORM) and Redis (ioredis) and exposes `GET /health` (liveness) and `GET /health/ready` (readiness). The first data model exists as entities plus a hand-written migration: `tenant`, `patient`, `service`, `appointment`, `inbox_message` and `outbox_message`. There are no domain endpoints, services or relays yet, and no `professional`, `slot_hold` or exclusion constraint (they come with the scheduling spec).
 
+> **MVP scope:** [docs/MVP.md](docs/MVP.md) lists the requirements and user stories for the first working version (Evolution API channel, AI engine inside this repo with Gemini and pgvector, consent, availability, booking, cancellation, retention job, fallback handling). Read it before speccing or implementing any MVP feature: pick a story there and feed it to `create-spec`. It also records where the MVP deviates from `../PRD.md` and `../CLAUDE.md` (for example, the AI runs here instead of `desk-health-agent-core`). Treat those as open until the story's spec confirms them.
+
 ## Tech stack
 <!-- auto:stack:start -->
 | Role | Technology |
