@@ -1,4 +1,5 @@
 import {
+  Column,
   Entity,
   Index,
   JoinColumn,
@@ -20,6 +21,10 @@ export class InboxMessageEntity extends MessageRecord {
     primaryKeyConstraintName: 'pk_inbox_message',
   })
   id!: string;
+
+  /** Created at ingress and carried by every later step (spec 004 D19). */
+  @Column({ name: 'trace_id', type: 'uuid' })
+  traceId!: string;
 
   @ManyToOne(() => TenantEntity, { onDelete: 'CASCADE' })
   @JoinColumn({

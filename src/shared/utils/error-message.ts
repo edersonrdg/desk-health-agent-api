@@ -9,3 +9,13 @@ export function errorMessage(err: unknown): string {
   const { code } = err as { code?: unknown };
   return typeof code === 'string' ? code : err.name;
 }
+
+/**
+ * Error class, plus the Postgres SQLSTATE when there is one. For logs where
+ * the message itself could quote data (driver errors can include values).
+ */
+export function errorClass(err: unknown): string {
+  if (!(err instanceof Error)) return typeof err;
+  const code = (err as { driverError?: { code?: unknown } }).driverError?.code;
+  return typeof code === 'string' ? `${err.name}(${code})` : err.name;
+}

@@ -79,4 +79,18 @@ describe('validateEnv', () => {
       validateEnv({ ...required, ENCRYPTION_KEY: shortKey }),
     ).not.toThrow(shortKey);
   });
+
+  it('leaves EVOLUTION_WEBHOOK_SECRET optional', () => {
+    expect(validateEnv(required).EVOLUTION_WEBHOOK_SECRET).toBeUndefined();
+    expect(
+      validateEnv({ ...required, EVOLUTION_WEBHOOK_SECRET: 's3cret' })
+        .EVOLUTION_WEBHOOK_SECRET,
+    ).toBe('s3cret');
+  });
+
+  it('rejects an empty EVOLUTION_WEBHOOK_SECRET without echoing it', () => {
+    expect(() =>
+      validateEnv({ ...required, EVOLUTION_WEBHOOK_SECRET: '' }),
+    ).toThrow('EVOLUTION_WEBHOOK_SECRET');
+  });
 });
