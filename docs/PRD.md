@@ -408,7 +408,7 @@ When the HIS is the source of truth, a hold is placed in Front Desk and the book
 | `professional` | name, registry number (e.g. CRM), specialties, locations, working_hours |  |
 | `service` | type (consultation / exam / procedure), duration, preparation, price, required_sequence, eligible_professionals | Also indexed into the knowledge base. |
 | `symptom_routing_rule` | description, example_phrases, target_services, approved_by, version, active | L2. Versioned; changes require approval. |
-| `patient` | whatsapp_id, name, dob, national_id (encrypted), insurance, consent_at, opt_out_offers | One WhatsApp number may map to several patients (a parent booking for a child). |
+| `patient` | whatsapp_id, name, dob, national_id (encrypted), insurance, consent_at, opt_out_offers | MVP: one patient per WhatsApp number per tenant (unique). Several patients per number (a parent booking for a child) is deferred past the MVP. |
 | `employer`, `employer_contract` | exam packages, coordinator contacts | Occupational health only. |
 | `slot_hold` | professional_id, range, conversation_id, expires_at, purpose (booking / offer) | Takes part in the exclusion constraint. |
 | `appointment` | patient_id, service_id, professional_id, range, status, source, external_ref, version | Status: booked, confirmed, cancelled, completed, no_show. |

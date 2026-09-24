@@ -2,6 +2,14 @@ import { z } from 'zod';
 
 const port = z.coerce.number().int().min(1).max(65535);
 
+/** A 256-bit key given as base64. The message never includes the value. */
+const base64Key = z
+  .string()
+  .regex(/^[A-Za-z0-9+/]+={0,2}$/, 'must be base64')
+  .refine((value) => Buffer.from(value, 'base64').length === 32, {
+    message: 'must decode to exactly 32 bytes',
+  });
+
 export const envSchema = z.object({
   POSTGRES_HOST: z.string().min(1).default('localhost'),
   POSTGRES_PORT: port.default(5432),
@@ -10,6 +18,8 @@ export const envSchema = z.object({
   POSTGRES_DB: z.string().min(1),
   REDIS_HOST: z.string().min(1).default('localhost'),
   REDIS_PORT: port.default(6379),
+  ENCRYPTION_KEY: base64Key,
+  NATIONAL_ID_HMAC_KEY: base64Key,
 });
 
 export type Env = z.infer<typeof envSchema>;

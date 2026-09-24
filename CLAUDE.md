@@ -6,7 +6,7 @@ The LLM agent lives in the sibling repository `../desk-health-agent-core` (Pytho
 
 System-wide rules, contracts and the non-negotiable rules: [../CLAUDE.md](../CLAUDE.md). Product spec: [../PRD.md](../PRD.md). Architecture is in §09 and the data model in §10.
 
-> Status: spec 002. The api connects to Postgres (TypeORM, no entities or migrations yet) and Redis (ioredis), and exposes `GET /health` (liveness) and `GET /health/ready` (readiness). No domain modules exist yet.
+> Status: spec 003. The api connects to Postgres (TypeORM) and Redis (ioredis) and exposes `GET /health` (liveness) and `GET /health/ready` (readiness). The first data model exists as entities plus a hand-written migration: `tenant`, `patient`, `service`, `appointment`, `inbox_message` and `outbox_message`. There are no domain endpoints, services or relays yet, and no `professional`, `slot_hold` or exclusion constraint (they come with the scheduling spec).
 
 ## Tech stack
 <!-- auto:stack:start -->
@@ -16,7 +16,8 @@ System-wide rules, contracts and the non-negotiable rules: [../CLAUDE.md](../CLA
 | Framework | NestJS 11.2 (`@nestjs/common`, `@nestjs/core`), RxJS 7.8, reflect-metadata 0.2 |
 | HTTP | Express 5 via `@nestjs/platform-express` 11.2 |
 | Config | `@nestjs/config` 4.0 (global `ConfigModule`), Zod 4.6 for the env schema |
-| Data | PostgreSQL via TypeORM 1.1 + `@nestjs/typeorm` 11.0 and `pg` 8.23 (connection only: no entities, no migrations, `synchronize: false`) |
+| Data | PostgreSQL via TypeORM 1.1 + `@nestjs/typeorm` 11.0 and `pg` 8.23. Entities with explicit snake_case names, hand-written migrations run through the TypeORM CLI (`typeorm-ts-node-commonjs`), `synchronize: false` |
+| Security | Node `crypto`: AES-256-GCM field encryption (versioned ciphertext) and an HMAC-SHA256 blind index, applied through TypeORM column transformers |
 | Cache/Queue | Redis via ioredis 5.11 (one shared client) |
 | Health | `@nestjs/terminus` 11.1 (`GET /health/ready`) |
 | Testing | Jest 30.5 + ts-jest 29.4, `@nestjs/testing` 11.2, Supertest 7.3 (e2e) |
@@ -26,7 +27,7 @@ System-wide rules, contracts and the non-negotiable rules: [../CLAUDE.md](../CLA
 
 The `@nestjs/*` companion packages are pinned to the NestJS 11 lines (config 4, terminus 11, typeorm 11). Their 12.x releases are ESM-only and can't be loaded by Jest in this CommonJS project.
 
-**Planned (not installed yet):** pgvector, BullMQ, n8n, WhatsApp Cloud API, request DTO validation (Zod or class-validator), TypeORM migrations.
+**Planned (not installed yet):** pgvector, BullMQ, n8n, WhatsApp Cloud API, request DTO validation (Zod or class-validator).
 <!-- auto:stack:end -->
 
 ## Architecture
@@ -35,28 +36,44 @@ The `@nestjs/*` companion packages are pinned to the NestJS 11 lines (config 4, 
 desk-health-agent-api/
 ├── docs/
 │   ├── 001-initial-project-structure/
-│   └── 002-readiness-health-check/
+│   ├── 002-readiness-health-check/
+│   └── 003-initial-data-model/
 ├── src/
 │   ├── config/
 │   ├── modules/
-│   │   └── health/
+│   │   ├── appointment/
+│   │   ├── health/
+│   │   ├── patient/
+│   │   ├── service/
+│   │   └── tenant/
 │   └── shared/
+│       ├── crypto/
 │       ├── database/
+│       │   └── migrations/
+│       ├── messaging/
 │       ├── redis/
 │       └── utils/
 └── test/
 ```
 
-- `docs/`: one folder per feature, numbered `NNN-<slug>/`. Each holds a `spec.md` written with the `create-spec` skill, which records the user's decisions and the execution steps for that feature.
+- `docs/`: one folder per feature, numbered `NNN-<slug>/`. Each holds a `spec.md` written with the `create-spec` skill, which records the user's decisions and the execution steps for that feature. `PRD.md` is a copy of `../PRD.md`.
 - `docs/001-initial-project-structure/`: `spec.md` for the initial NestJS structure, `GET /health` liveness and the docker-compose Postgres and Redis.
 - `docs/002-readiness-health-check/`: `spec.md` for validated config, the Postgres and Redis connections and `GET /health/ready`.
-- `src/`: application source code (Nest `sourceRoot`, compiled to `dist/`). `main.ts` bootstraps the app, enables shutdown hooks and listens on `PORT`. `app.module.ts` is the root module: it loads the global `ConfigModule` (validated by `validateEnv`) and imports `DatabaseModule`, `RedisModule` and `HealthModule`. Code is split into `config/`, `modules/` (one folder per feature module) and `shared/` (infrastructure modules and helpers reused across features).
-- `src/config/`: `env.schema.ts` holds the Zod env schema, its inferred `Env` type (use with `ConfigService<Env, true>` and `{ infer: true }`) and `validateEnv`, which fails boot with a readable error that never echoes values. `env.schema.spec.ts` tests defaults, required variables and port coercion.
-- `src/shared/database/`: `DatabaseModule` registers the TypeORM Postgres DataSource with `manualInitialization: true`. `DatabaseConnector` (`database-connector.service.ts`) initializes it in the background after boot and retries every 5 s forever, so the api starts even when Postgres is down.
+- `docs/003-initial-data-model/`: `spec.md` for the first entities, field encryption and the initial migration (decisions D1–D29).
+- `src/`: application source code (Nest `sourceRoot`, compiled to `dist/`). `main.ts` bootstraps the app, enables shutdown hooks and listens on `PORT`. `app.module.ts` is the root module: it loads the global `ConfigModule` (validated by `validateEnv`) and imports `CryptoModule`, `DatabaseModule`, `RedisModule`, `HealthModule` and the entity modules (`TenantModule`, `PatientModule`, `ServiceModule`, `AppointmentModule`, `MessagingModule`). Code is split into `config/`, `modules/` (one folder per feature module) and `shared/` (infrastructure modules and helpers reused across features).
+- `src/config/`: `env.schema.ts` holds the Zod env schema, its inferred `Env` type (use with `ConfigService<Env, true>` and `{ infer: true }`) and `validateEnv`, which fails boot with a readable error that never echoes values. `env.schema.spec.ts` tests defaults, required variables, port coercion and the 32-byte base64 keys.
+- `src/modules/appointment/`: `AppointmentModule` registers `AppointmentEntity` (`appointment.entity.ts`). It holds `tenant_id`, `patient_id` (CASCADE) and `service_id` (RESTRICT), a `tstzrange` `range` exposed as `{ start, end }`, the `appointment_status` and `appointment_source` Postgres enums (`APPOINTMENT_STATUSES` and `APPOINTMENT_SOURCES`) and an optimistic `@VersionColumn`.
 - `src/modules/health/`: `HealthModule` (imports `TerminusModule` with its logger off). `health.controller.ts` serves `GET /health` (liveness: 200, empty body, no checks) and `GET /health/ready` (readiness: Postgres `SELECT 1` and Redis `PING`, 1 s timeout each; 200 or 503 with `{ status, details: { postgres, redis } }` as up/down only, failures logged instead of returned). `redis.health.ts` is the custom Redis indicator. Specs sit next to both.
+- `src/modules/patient/`: `PatientModule` registers `PatientEntity`. `whatsapp_id` is unique per tenant. `national_id` is encrypted, and a `@BeforeInsert`/`@BeforeUpdate` hook keeps the `national_id_hash` blind index in sync with it. `insurance` is plain `jsonb`, and `consent_at` is nullable.
+- `src/modules/service/`: `ServiceModule` registers `ServiceEntity`. It holds `name` (unique per tenant), the `service_type` enum (`SERVICE_TYPES`), `duration_minutes`, `price_cents` + `currency`, `required_sequence uuid[]` and `active`.
+- `src/modules/tenant/`: `TenantModule` registers `TenantEntity` (`name`, `timezone`, `locale` with a DB CHECK, `policies` jsonb). `tenant-policies.schema.ts` holds the Zod schemas for `policies` (strict object), IANA time zones and locales, with a spec next to it.
+- `src/shared/crypto/`: field encryption. `crypto-keys.ts` is a module-level key holder (transformers live outside DI), filled by the global `CryptoModule` at init, by `data-source.ts` and by tests. `field-encryption.ts` has AES-256-GCM `encrypt`/`decrypt` (layout `version | iv | tag | ciphertext`, errors never echo input) and `hmacNationalId` (digits only). `encrypted.transformer.ts` has the `encryptedString` and `encryptedJson` column transformers for `bytea`.
+- `src/shared/database/`: `DatabaseModule` registers the TypeORM Postgres DataSource with `manualInitialization: true`. `DatabaseConnector` (`database-connector.service.ts`) initializes it in the background after boot and retries every 5 s forever, so the api starts even when Postgres is down. `database.options.ts` builds the connection options and the `ENTITIES` list, shared by `DatabaseModule` and `data-source.ts` (the standalone DataSource for the TypeORM CLI, which loads `.env` itself). `tstzrange.transformer.ts` maps `tstzrange` ↔ `{ start, end }` (half-open `[)`).
+- `src/shared/database/migrations/`: hand-written TypeORM migrations. `1790274278271-InitialDataModel.ts` creates the three enums and six tables with their constraints and indexes, and `down` drops them all.
+- `src/shared/messaging/`: `MessagingModule` registers `InboxMessageEntity` and `OutboxMessageEntity`. Both extend `MessageRecord` (`message-record.ts`): `external_id` unique per tenant, `event_type`, an encrypted `payload`, `published_at`, `attempts`, and `last_error` (never payload data). Each table has a partial index on unpublished rows.
 - `src/shared/redis/`: global `RedisModule` exporting one ioredis client under the `REDIS_CLIENT` token (`redis.constants.ts`). `redis.client.ts` builds the client and logs connection state only on up/down transitions. The module quits (or disconnects) the client on shutdown.
 - `src/shared/utils/`: small shared helpers. `error-message.ts` turns an unknown error into a loggable message (falls back to the error code for Node's empty-message `AggregateError`).
-- `test/`: end-to-end tests. `app.e2e-spec.ts` boots the full `AppModule` and checks `GET /health` and `GET /health/ready` over HTTP with Supertest, **against the docker-compose Postgres and Redis** (needs `docker compose up -d` and `.env`). `jest-e2e.json` is the Jest config used by `npm run test:e2e` (matches `*.e2e-spec.ts`).
+- `test/`: end-to-end tests. `app.e2e-spec.ts` boots the full `AppModule` and checks `GET /health` and `GET /health/ready` over HTTP with Supertest, **against the docker-compose Postgres and Redis** (needs `docker compose up -d` and `.env`). `data-model.e2e-spec.ts` creates a throwaway `<POSTGRES_DB>_e2e_data_model` database, runs the migrations, asserts that the entities match the schema (no drift), round-trips each entity (checking the ciphertext on disk), checks every constraint and delete rule, then reverts. `jest-e2e.json` is the Jest config used by `npm run test:e2e` (matches `*.e2e-spec.ts`).
 <!-- auto:structure:end -->
 
 ## Commands
@@ -76,6 +93,11 @@ desk-health-agent-api/
 | `npm run test:cov` | Unit tests with coverage into `coverage/` |
 | `npm run test:debug` | Unit tests in band with `--inspect-brk` for a debugger |
 | `npm run test:e2e` | End-to-end tests: `test/**/*.e2e-spec.ts` with `test/jest-e2e.json`. Needs `docker compose up -d` and `.env` (tests hit the real Postgres and Redis) |
+| `npm run typeorm` | TypeORM CLI (`typeorm-ts-node-commonjs`) bound to `src/shared/database/data-source.ts`; pass a subcommand after `--` |
+| `npm run migration:run` | Apply pending migrations to the database in `.env` |
+| `npm run migration:revert` | Revert the last applied migration |
+| `npm run migration:show` | List migrations and whether each is applied |
+| `npm run migration:create -- src/shared/database/migrations/<Name>` | Create an empty migration file to write by hand |
 | `npx jest src/path/to/file.spec.ts` | Run a single unit test file |
 | `npx jest -t "name"` | Run tests whose name matches |
 | `npx nest g resource <name>` | Scaffold a feature module (module, controller, service, DTOs, spec) |
@@ -103,8 +125,10 @@ desk-health-agent-api/
 | `POSTGRES_DB` | none (required) | `src/config/env.schema.ts` → `DatabaseModule`; `docker-compose.yml` (Postgres container) |
 | `REDIS_HOST` | `localhost` | `src/config/env.schema.ts` → `RedisModule` |
 | `REDIS_PORT` | `6379` | `src/config/env.schema.ts` → `RedisModule` |
+| `ENCRYPTION_KEY` | none (required, base64 of 32 bytes) | `src/config/env.schema.ts` → `CryptoModule` / `data-source.ts` (AES-256-GCM field encryption) |
+| `NATIONAL_ID_HMAC_KEY` | none (required, base64 of 32 bytes) | `src/config/env.schema.ts` → `CryptoModule` / `data-source.ts` (national ID blind index) |
 
-Copy `.env.example` (committed, dev-only placeholders) to `.env` (git-ignored). `ConfigModule` loads `.env` from the working directory, and the api refuses to boot if a required variable is missing or a port is invalid. `docker compose` also refuses to start without the three required `POSTGRES_*` variables.
+Copy `.env.example` (committed, dev-only placeholders) to `.env` (git-ignored). `ConfigModule` loads `.env` from the working directory, and the api refuses to boot if a required variable is missing, a port is invalid or a key isn't 32 bytes of base64. Generate keys with `openssl rand -base64 32`. Changing a key makes existing ciphertext and hashes unreadable. `docker compose` also refuses to start without the three required `POSTGRES_*` variables.
 <!-- auto:env:end -->
 
 ## Conventions
